@@ -45,6 +45,8 @@
     <Compile Include="OptimisticObject.cs" />
     <Compile Include="TestObject.cs" />
     <Compile Include="WrapperTest.cs" />
+    <Compile Include="OptimisticFlushObject.cs" />
+    <Compile Include="Listing.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
 </Project>

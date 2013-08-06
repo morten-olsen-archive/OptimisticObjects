@@ -14,7 +14,7 @@ namespace OptimisticObjects
 {
 	public static class OptimisticObjectExt
 	{
-		public static OptimisticObject CreateOptimisticObject(this object obj, Action intent) {
+		public static OptimisticObject CreateOptimisticObject(this object obj, Action intent = null) {
 			var oObj = new OptimisticObject ();
 			oObj.UpdateValues(obj, intent);
 			return oObj;
@@ -75,6 +75,15 @@ namespace OptimisticObjects
 		private List<Operation> _operations;
 		private Dictionary<string, List<Action<object>>> _subscriptions;
 
+		public Dictionary<string, object> OptimisticValues {
+			get {
+				return _optimisticValues;
+			}
+			set {
+				_optimisticValues = value;
+			}
+		}
+
 		public bool IsSync(string name)
 		{
 			if (!_optimisticValues.ContainsKey (name) &&
@@ -101,7 +110,7 @@ namespace OptimisticObjects
 			return diff;
 		}
 
-		public void UpdateValues(object values, Action intent)
+		public void UpdateValues(object values, Action intent = null)
 		{
 			_operations.Add (new Operation {
 				Intent = intent,
@@ -208,11 +217,41 @@ namespace OptimisticObjects
 			}
 		}
 
+		public bool HasAction(string name)
+		{
+			return true;
+		}
+
+		public Func<T> GetAction<T>(string name, object input)
+		{
+			var action = new Func<T> (() => {
+				var actionUri =  (_optimisticValues["actions"] as Dictionary<string, string>)[name];
+				var client = new WebClient ();
+				var data = client.DownloadString (actionUri);
+				var obj = JsonConvert.DeserializeObject<T>(data);
+				return obj;
+			});
+			return action;
+		}
+
+		public Func<T> PostAction<T>(string name, object input)
+		{
+			var action = new Func<T> (() => {
+				var actionUri = (_optimisticValues["actions"] as Dictionary<string, string>) [name];
+				var client = new WebClient ();
+				var data = client.UploadString (actionUri, JsonConvert.SerializeObject(input));
+				var obj = JsonConvert.DeserializeObject<T>(data);
+				return obj;
+			});
+			return action;
+		}
+
 		public void Process()
 		{
 			var operation = _operations [0];
 			try {
-				operation.Intent();
+				if (operation.Intent != null)
+					operation.Intent();
 				UpdatePessimisticValues(operation.Value);
 				_operations.Remove(operation);
 			} catch (Exception ex) {

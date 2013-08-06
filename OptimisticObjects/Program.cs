@@ -7,13 +7,15 @@ namespace OptimisticObjects
 	{
 		public static void Main (string[] args)
 		{
+			var l = new Listing (26601923);
+			Console.WriteLine (l.ItemType);
+			l.ItemType = "sdfsdfsdfsdfsdf";
+			Console.WriteLine (l.ItemType);
 			var wrapper = new WrapperTest ();
 			var test = new TestObject ();
 			test.MyProperty = "Some thing here";
 
-			var optimistTest = test.CreateOptimisticObject (() => {
-				WorkingServerStuff();
-			});
+			var optimistTest = test.CreateOptimisticObject ();
 			optimistTest.Failed += (operation, ex) => {
 				Console.WriteLine("Object creating failed, doing rollback, to last known sync state");
 			};
