@@ -75,6 +75,32 @@ namespace OptimisticObjects
 		private List<Operation> _operations;
 		private Dictionary<string, List<Action<object>>> _subscriptions;
 
+		public bool IsSync(string name)
+		{
+			if (!_optimisticValues.ContainsKey (name) &&
+				!_pessimisticValues.ContainsKey (name)) {
+				return true;
+			} else if (!_optimisticValues.ContainsKey (name) ||
+			           !_pessimisticValues.ContainsKey (name)) {
+				return false;
+			}
+			else if (_optimisticValues [name] != _pessimisticValues [name]) {
+				return false;
+			}
+			return true;
+		}
+
+		public Dictionary<string, object> GetDiff() 
+		{
+			var diff = new Dictionary<string, object> ();
+			foreach (var item in _optimisticValues) {
+				if (item.Value != _pessimisticValues[item.Key]) {
+					diff.Add (item.Key, item.Value);
+				}
+			}
+			return diff;
+		}
+
 		public void UpdateValues(object values, Action intent)
 		{
 			_operations.Add (new Operation {

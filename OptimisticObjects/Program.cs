@@ -17,7 +17,11 @@ namespace OptimisticObjects
 			optimistTest.Failed += (operation, ex) => {
 				Console.WriteLine("Object creating failed, doing rollback, to last known sync state");
 			};
-			wrapper.BindProperty ("Write", optimistTest, "MyProperty");
+			//wrapper.BindProperty ("Write", optimistTest, "MyProperty");
+
+			optimistTest.Subscribe ("MyProperty", (value) => {
+				Console.WriteLine("MyProperty: " + value + " (" + (optimistTest.IsSync("MyProperty") ? "sync" : "mock") + ")");
+			});
 
 			optimistTest.UpdateValues(new {
 				MyProperty = "Hello World"
