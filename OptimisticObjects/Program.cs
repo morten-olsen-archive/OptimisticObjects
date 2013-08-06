@@ -7,12 +7,7 @@ namespace OptimisticObjects
 	{
 		public static void Main (string[] args)
 		{
-			var l = new Listing (26601923);
-			Console.WriteLine (l.ItemType);
-			l.ItemType = "sdfsdfsdfsdfsdf";
-			Console.WriteLine (l.ItemType);
-			var wrapper = new WrapperTest ();
-			var test = new TestObject ();
+			/*var test = new TestObject ();
 			test.MyProperty = "Some thing here";
 
 			var optimistTest = test.CreateOptimisticObject ();
@@ -35,6 +30,28 @@ namespace OptimisticObjects
 
 			while (optimistTest.HasProcesses) {
 				optimistTest.Process ();
+			}*/
+
+
+			var listing = new OptimisticObject ("http://api.trendsales.dk/2/listings/26601923");
+			listing.Subscribe("ItemType", (itemtype) => {
+				Console.WriteLine("ItemType: " + itemtype);
+			});
+			listing.UpdateValues (new { Following = false});
+			listing.Subscribe("Following", (itemtype) => {
+				Console.WriteLine("Following changed to: " + itemtype + " ("
+				                  + (listing.IsSync("Following") ? "sync" : "mock") + ")");
+			});
+			listing.Sync ();
+			Thread.Sleep (1000);
+			listing.UpdateValues (new { Following = true }, () => {
+				var obj = listing.FillObject<Listing>();
+				var action = listing.GetAction<bool>("Follow", obj);
+				action();
+			});
+
+			while (listing.HasProcesses) {
+				listing.Process();
 			}
 		}
 

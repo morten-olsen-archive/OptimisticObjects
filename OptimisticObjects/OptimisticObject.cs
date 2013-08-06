@@ -210,11 +210,31 @@ namespace OptimisticObjects
 			}
 		}
 
+		public object this[string name]
+		{
+			get {
+				return _optimisticValues [name];
+			}
+		}
+
 		public bool HasProcesses
 		{
 			get {
 				return _operations.Any ();
 			}
+		}
+
+		public T FillObject<T>()
+		{
+			var t = typeof(T);
+			var obj = Activator.CreateInstance<T> ();
+			foreach (var prop in obj.GetType().GetProperties()) {
+				if (_optimisticValues.ContainsKey(prop.Name)) {
+					var value = _optimisticValues [prop.Name];
+					prop.SetValue(obj, value, null);
+				}
+			}
+			return obj;
 		}
 
 		public bool HasAction(string name)
@@ -257,6 +277,7 @@ namespace OptimisticObjects
 			} catch (Exception ex) {
 				++operation.Tries;
 				if (operation.Tries >= MaxTries) {
+					var t = _pessimisticValues ["Following"];
 					_operations.Remove (operation);
 					_optimisticValues = new Dictionary<string, object>();
 					foreach (var val in _pessimisticValues) {
@@ -279,7 +300,9 @@ namespace OptimisticObjects
 				Breaking = true;
 			}
 
+			public object Data { get; set; }
 			public Action Intent { get; set; }
+			public Action Retry { get; set; }
 			public bool Breaking { get; set; }
 			public object Value { get; set; }
 			public int Tries { get; set; }

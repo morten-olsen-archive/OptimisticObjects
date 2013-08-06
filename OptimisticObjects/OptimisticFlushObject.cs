@@ -16,7 +16,7 @@ namespace OptimisticObjects
 			Sync ();
 		}
 
-		public void SetValue(object value)
+		public void SetOptimisticValue(object value)
 		{
 			var stackTrace = new StackTrace();
 			var frames = stackTrace.GetFrames();
@@ -27,9 +27,7 @@ namespace OptimisticObjects
 			SetObject(name, value);
 		}
 
-		private Dictionary<string, object> _values;
-
-		public T GetValue<T>()
+		public T GetOptimisticValue<T>()
 		{
 			var stackTrace = new StackTrace();
 			var frames = stackTrace.GetFrames();
@@ -48,6 +46,7 @@ namespace OptimisticObjects
 		public void Save()
 		{
 			var action = GetAction<object> ("update", GetDiff ());
+			action ();
 		}
 	}
 }
