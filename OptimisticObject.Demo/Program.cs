@@ -11,41 +11,58 @@ namespace OptimisticObject.Demo
     {
         static void Main(string[] args)
         {
-            var demoObject = new OptimisticObjects.OptimisticObject<DemoObject>(string.Empty);
-            demoObject.Bind<string>("Name", Bind);
+            var demoObject = OptimisticObjects.ObjectPool<DemoObject>.Get("SomeUrl");
+            demoObject.Bind<string>("Name", (val) =>
+            {
+                Console.WriteLine("Original\t: " + val);
+            });
+
+            var demoObjectCopy = OptimisticObjects.ObjectPool<DemoObject>.Get("SomeUrl");
+            demoObjectCopy.Bind<string>("Name", (val) =>
+            {
+                Console.WriteLine("Copy\t\t: " + val);
+            });
+
+
 
             demoObject.AddChange(new OptimisticObjects.ChangeRequest<DemoObject>{
                 Name = "Update Title",
                 Values = new Dictionary<string,object> {
-                    { "Name", "Hello World 1" }
+                    { "Name", "Optimistic Value 1" }
                 },
                 Run = Run
             });
+
+
+
             demoObject.AddChange(new OptimisticObjects.ChangeRequest<DemoObject>
             {
                 Name = "Update Title",
                 Values = new Dictionary<string, object> {
-                    { "Name", "Hello World 3" }
+                    { "Name", "Optimistic Value 2" }
                 },
                 Run = Run
             });
-            demoObject.Run();
+
+
+
+            demoObject.Run().ContinueWith((t) =>
+            {
+                OptimisticObjects.ObjectPool<DemoObject>.Release("SomeUrl");
+                OptimisticObjects.ObjectPool<DemoObject>.Release("SomeUrl");
+                Console.WriteLine("Done");
+            });
 
             Console.ReadKey();
         }
 
-        static void Bind(string input)
-        {
-            Console.WriteLine("Got value: " + input);
-        }
-
         static OptimisticObjects.OptimisticResponse<DemoObject> Run()
         {
-            Thread.Sleep(3000);
             var response = new OptimisticObjects.OptimisticResponse<DemoObject>();
+            Console.WriteLine("- Sync state received");
             response.Result = new DemoObject
             {
-                Name = "Hello World 2"
+                Name = "Pessimistic Value 1 - Sync"
             };
             return response;
         }

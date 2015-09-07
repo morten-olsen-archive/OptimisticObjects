@@ -186,5 +186,13 @@ namespace OptimisticObjects
                 running = false;
             });
         }
+
+        internal void ClearBindings()
+        {
+            lock (Bindings)
+            {
+                Bindings.Clear();
+            }
+        }
     }
 }

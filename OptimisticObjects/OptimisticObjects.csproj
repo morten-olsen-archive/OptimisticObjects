@@ -35,6 +35,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ChangeRequest.cs" />
+    <Compile Include="ObjectPool.cs" />
+    <Compile Include="ObjectStore.cs" />
     <Compile Include="OptimisticError.cs" />
     <Compile Include="OptimisticObject.cs" />
     <Compile Include="OptimisticResponse.cs" />
