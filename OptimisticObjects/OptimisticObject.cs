@@ -1,312 +1,190 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Collections;
 using System.Linq;
-using System.Reflection;
-using System.Net;
-using System.Runtime.Serialization.Json;
-using System.IO;
 using System.Text;
+using System.Threading.Tasks;
+using System.Reflection;
+using System.Net.Http;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace OptimisticObjects
 {
-	public static class OptimisticObjectExt
-	{
-		public static OptimisticObject CreateOptimisticObject(this object obj, Action intent = null) {
-			var oObj = new OptimisticObject ();
-			oObj.UpdateValues(obj, intent);
-			return oObj;
-		}
+    public class OptimisticObject<TType>
+        where TType : new()
+    {
+        public OptimisticObject(string url)
+        {
+            ResourceUrl = url;
+            PessimisticValues = new Dictionary<string, object>();
+            PendingChanges = new List<ChangeRequest<TType>>();
+            Bindings = new Dictionary<string, List<object>>();
+            Actions = new Dictionary<string, string>();
+        }
 
-		public static void BindMethod(this object org, string methodName, OptimisticObject obj, string name)
-		{
-			obj.Subscribe (name, (value) => {
-				var m = org.GetType().GetMethod(methodName);
-				m.Invoke(org, new[] { value });
-			});
-		}
+        private string ResourceUrl { get; set; }
+        private Dictionary<string, List<object>> Bindings { get; set; }
+        private Dictionary<string, object> PessimisticValues { get; set; }
+        private Dictionary<string, string> Actions { get; set; }
+        private List<ChangeRequest<TType>> PendingChanges { get; set; }
 
-		public static void BindProperty(this object org, string propertyName, OptimisticObject obj, string name)
-		{
-			obj.Subscribe (name, (value) => {
-				var m = org.GetType().GetProperty(propertyName);
-				m.SetValue(org, value, null);
-			});
-		}
-	}
+        public void Bind<T>(string name, Action<T> binding)
+        {
+            if (!Bindings.ContainsKey(name))
+            {
+                Bindings[name] = new List<object>();
+            }
+            Bindings[name].Add(binding);
+        }
 
-	public class OptimisticObject
-	{
-		private const int MaxTries = 5;
-		private string _uri;
+        public void Unbind<T>(string name, Action<T> binding)
+        {
+            if (!Bindings.ContainsKey(name))
+            {
+                Bindings[name] = new List<object>();
+            }
+            Bindings[name].Remove(binding);
+        }
 
-		public delegate void FailedHandler (Operation operation, Exception ex);
-		public event FailedHandler Failed;
+        private TType GetStaleVersion(Dictionary<string, object> values)
+        {
+            var response = default(TType);
+            var type = response.GetType();
 
-		public OptimisticObject ()
-		{
-			_optimisticValues = new Dictionary<string, object> ();
-			_pessimisticValues = new Dictionary<string, object> ();
-			_operations = new List<Operation> ();
-			_subscriptions = new Dictionary<string, List<Action<object>>> ();
-		}
+            foreach (var item in values)
+            {
+                var prop = type.GetRuntimeProperty(item.Key);
+                if (prop != null)
+                {
+                    prop.SetValue(response, item.Value);
+                }
+            }
 
-		public OptimisticObject(string uri) : this() {
-			_uri = uri;
-		}
+            return response;
+        }
 
-		public void Sync()
-		{
-			var client = new WebClient ();
-			client.Headers ["Type"] = "application/json";
-			var data = client.DownloadString (new Uri(_uri));
-			var result = JsonConvert.DeserializeObject<Dictionary<string, object>> (data);
-			var inner = result ["Result"];
-			var item = (Dictionary<string, object>)JsonConvert.DeserializeObject<Dictionary<string, object>> (inner.ToString());
-			
-			UpdateOptimisticValues (item);
-			UpdatePessimisticValues (item);
-		}
+        public TType GetPessimisticVersion(Dictionary<string, object> values)
+        {
+            return GetStaleVersion(PessimisticValues);
+        }
 
-		private Dictionary<string, object> _optimisticValues;
-		private Dictionary<string, object> _pessimisticValues;
-		private List<Operation> _operations;
-		private Dictionary<string, List<Action<object>>> _subscriptions;
+        public void AddChange(ChangeRequest<TType> change)
+        {
+            PendingChanges.Add(change);
+            NotifyChanges();
+        }
 
-		public Dictionary<string, object> OptimisticValues {
-			get {
-				return _optimisticValues;
-			}
-			set {
-				_optimisticValues = value;
-			}
-		}
+        public void ApplyObject(TType obj)
+        {
+            var type = obj.GetType();
+            lock (PessimisticValues)
+            {
+                foreach (var item in type.GetRuntimeProperties())
+                {
+                    PessimisticValues[item.Name] = item.GetValue(obj);
+                }
+            }
+            NotifyChanges();
+        }
 
-		public bool IsSync(string name)
-		{
-			if (!_optimisticValues.ContainsKey (name) &&
-				!_pessimisticValues.ContainsKey (name)) {
-				return true;
-			} else if (!_optimisticValues.ContainsKey (name) ||
-			           !_pessimisticValues.ContainsKey (name)) {
-				return false;
-			}
-			else if (_optimisticValues [name] != _pessimisticValues [name]) {
-				return false;
-			}
-			return true;
-		}
+        public Dictionary<string, object> GetOptimisticValues()
+        {
+            Dictionary<string, object> baseValues = null;
+                baseValues = PessimisticValues.ToDictionary(entry => entry.Key,
+                                                   entry => entry.Value);
+            foreach (var changeRequest in PendingChanges)
+            {
+                foreach (var item in changeRequest.Values)
+                {
+                    baseValues[item.Key] = item.Value;
+                }
+            }
 
-		public Dictionary<string, object> GetDiff() 
-		{
-			var diff = new Dictionary<string, object> ();
-			foreach (var item in _optimisticValues) {
-				if (item.Value != _pessimisticValues[item.Key]) {
-					diff.Add (item.Key, item.Value);
-				}
-			}
-			return diff;
-		}
+            return baseValues;
+        }
 
-		public void UpdateValues(object values, Action intent = null)
-		{
-			_operations.Add (new Operation {
-				Intent = intent,
-				Value = values
-			});
-			UpdateOptimisticValues (values);
-		}
+        private void CallBinding (string name, object value)
+        {
+            foreach (var binding in Bindings[name])
+            {
+                var gType = binding.GetType().GenericTypeArguments[0];
+                var type = typeof(Action<>).MakeGenericType(gType);
+                var t = type.GetRuntimeMethod("Invoke", new[] { gType });
+                t.Invoke(binding, new object[] { value });
+            }
+        }
 
-		public void BindProperty(object obj, string property, string name) {
-			Subscribe (name, (v) => {
-				obj.GetType ().GetProperty (property).SetValue (obj, v, null);
-			});
-		}
+        public void NotifyChanges()
+        {
+            var values = GetOptimisticValues();
+            foreach (var binding in Bindings)
+            {
+                if (values.ContainsKey(binding.Key))
+                {
+                    CallBinding(binding.Key, values[binding.Key]);
+                }
+                else
+                {
+                    
+                }
+            }
+        }
 
-		public void Subscribe(string name, Action<object> action)
-		{
-			if (!_subscriptions.ContainsKey (name)) {
-				_subscriptions.Add(name, new List<Action<object>>());
-			}
-			_subscriptions [name].Add (action);
-			if (_optimisticValues.ContainsKey (name))
-				action (_optimisticValues [name]);
-		}
+        public async Task Update()
+        {
+            using (var client = new HttpClient())
+            {
+                var response = await client.GetAsync(ResourceUrl).ConfigureAwait(true);
+                var body = await response.Content.ReadAsStringAsync().ConfigureAwait(true);
+                var obj = JsonConvert.DeserializeObject<TType>(body);
+                ApplyObject(obj);
+            }
+        }
 
-		public void Unsubscribe(string name, Action<object> action)
-		{
-			if (_subscriptions.ContainsKey(name))
-				_subscriptions [name].Remove (action);
-		}
+        private bool running = false;
+        public async Task Run()
+        {
+            if (running) return;
 
-		public void UpdateOptimisticValues(string name, object value)
-		{
-			if (_optimisticValues.ContainsKey (name)) {
-				_optimisticValues [name] = value;
-				NotifySubscribers (name);
-			} else {
-				_optimisticValues [name] = value;
-				NotifySubscribers (name);
-			}
-		}
-
-		public void UpdateOptimisticValues(object values)
-		{
-			foreach (var prop in values.GetType().GetProperties()) {
-				if (_optimisticValues.ContainsKey (prop.Name)) {
-					_optimisticValues [prop.Name] = prop.GetValue (values, null);
-					NotifySubscribers (prop.Name);
-				} else {
-					_optimisticValues [prop.Name] = prop.GetValue (values, null);
-					NotifySubscribers (prop.Name);
-				}
-			}
-		}
-
-		private void UpdateOptimisticValues(Dictionary<string, object> values)
-		{
-			foreach (var prop in values) {
-				if (_optimisticValues.ContainsKey (prop.Key)) {
-					_optimisticValues [prop.Key] = prop.Value;
-					NotifySubscribers (prop.Key);
-				} else {
-					_optimisticValues [prop.Key] = prop.Value;
-					NotifySubscribers (prop.Key);
-				}
-			}
-		}
-
-		private void NotifySubscribers(string name)
-		{
-			if (!_subscriptions.ContainsKey (name))
-				return;
-			var value = _optimisticValues [name];
-			foreach (var subscriber in _subscriptions[name]) {
-				subscriber (value);
-			}
-		}
-
-		private void UpdatePessimisticValues(object values)
-		{
-			foreach (var prop in values.GetType().GetProperties()) {
-				if (_pessimisticValues.ContainsKey (prop.Name)) {
-					_pessimisticValues [prop.Name] = prop.GetValue (values, null);
-				} else {
-					_pessimisticValues [prop.Name] = prop.GetValue (values, null);
-				}
-			}
-		}
-
-		private void UpdatePessimisticValues(Dictionary<string, object> values)
-		{
-			foreach (var prop in values) {
-				if (_pessimisticValues.ContainsKey (prop.Key)) {
-					_pessimisticValues [prop.Key] = prop.Value;
-				} else {
-					_pessimisticValues [prop.Key] = prop.Value;
-				}
-			}
-		}
-
-		public object this[string name]
-		{
-			get {
-				return _optimisticValues [name];
-			}
-		}
-
-		public bool HasProcesses
-		{
-			get {
-				return _operations.Any ();
-			}
-		}
-
-		public T FillObject<T>()
-		{
-			var t = typeof(T);
-			var obj = Activator.CreateInstance<T> ();
-			foreach (var prop in obj.GetType().GetProperties()) {
-				if (_optimisticValues.ContainsKey(prop.Name)) {
-					var value = _optimisticValues [prop.Name];
-					prop.SetValue(obj, value, null);
-				}
-			}
-			return obj;
-		}
-
-		public bool HasAction(string name)
-		{
-			return true;
-		}
-
-		public Func<T> GetAction<T>(string name, object input)
-		{
-			var action = new Func<T> (() => {
-				var actionUri =  (_optimisticValues["actions"] as Dictionary<string, string>)[name];
-				var client = new WebClient ();
-				var data = client.DownloadString (actionUri);
-				var obj = JsonConvert.DeserializeObject<T>(data);
-				return obj;
-			});
-			return action;
-		}
-
-		public Func<T> PostAction<T>(string name, object input)
-		{
-			var action = new Func<T> (() => {
-				var actionUri = (_optimisticValues["actions"] as Dictionary<string, string>) [name];
-				var client = new WebClient ();
-				var data = client.UploadString (actionUri, JsonConvert.SerializeObject(input));
-				var obj = JsonConvert.DeserializeObject<T>(data);
-				return obj;
-			});
-			return action;
-		}
-
-		public void Process()
-		{
-			var operation = _operations [0];
-			try {
-				if (operation.Intent != null)
-					operation.Intent();
-				UpdatePessimisticValues(operation.Value);
-				_operations.Remove(operation);
-			} catch (Exception ex) {
-				++operation.Tries;
-				if (operation.Tries >= MaxTries) {
-					var t = _pessimisticValues ["Following"];
-					_operations.Remove (operation);
-					_optimisticValues = new Dictionary<string, object>();
-					foreach (var val in _pessimisticValues) {
-						UpdateOptimisticValues (val.Key, val.Value);
-					}
-					if (operation.Breaking) {
-						_operations.RemoveRange (0, _operations.Count);
-					}
-					if (Failed != null) {
-						Failed (operation, ex);
-					}
-				}
-			}
-		}
-
-		public class Operation
-		{
-			public Operation()
-			{
-				Breaking = true;
-			}
-
-			public object Data { get; set; }
-			public Action Intent { get; set; }
-			public Action Retry { get; set; }
-			public bool Breaking { get; set; }
-			public object Value { get; set; }
-			public int Tries { get; set; }
-		}
-	}
+            running = true;
+            await Task.Run(() =>
+            {
+                while (PendingChanges.Any())
+                {
+                    ChangeRequest<TType> change = null;
+                    lock (PendingChanges)
+                    {
+                        change = PendingChanges.First();
+                        PendingChanges.Remove(change);
+                    }
+                    var response = change.Run();
+                    if (response.Error != null)
+                    {
+                        if (change.Attempts < 3)
+                        {
+                            change.Attempts++;
+                            lock (PendingChanges)
+                            {
+                                PendingChanges.Insert(0, change);
+                            }
+                        }
+                        else
+                        {
+                            if (response.Error != null)
+                            {
+                                lock (PendingChanges)
+                                {
+                                    PendingChanges.Clear();
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        ApplyObject(response.Result);
+                    }
+                }
+                running = false;
+            });
+        }
+    }
 }
-
