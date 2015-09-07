@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Reflection;
 using System.Net.Http;
 using Newtonsoft.Json;
+using System.Linq.Expressions;
 
 namespace OptimisticObjects
 {
@@ -27,7 +28,13 @@ namespace OptimisticObjects
         private Dictionary<string, string> Actions { get; set; }
         private List<ChangeRequest<TType>> PendingChanges { get; set; }
 
-        public void Bind<T>(string name, Action<T> binding)
+        public void Bind<T>(Expression<Func<TType, T>> property, Action<T> binding)
+        {
+            var propertyInfo = ((MemberExpression)property.Body).Member as PropertyInfo;
+            Bind<T>(propertyInfo.Name, binding);
+        }
+
+        private void Bind<T>(string name, Action<T> binding)
         {
             if (!Bindings.ContainsKey(name))
             {

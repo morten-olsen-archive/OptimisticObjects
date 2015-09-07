@@ -12,13 +12,13 @@ namespace OptimisticObject.Demo
         static void Main(string[] args)
         {
             var demoObject = OptimisticObjects.ObjectPool<DemoObject>.Get("SomeUrl");
-            demoObject.Bind<string>("Name", (val) =>
+            demoObject.Bind(b => b.Name, (string val) =>
             {
                 Console.WriteLine("Original\t: " + val);
             });
 
             var demoObjectCopy = OptimisticObjects.ObjectPool<DemoObject>.Get("SomeUrl");
-            demoObjectCopy.Bind<string>("Name", (val) =>
+            demoObjectCopy.Bind(b => b.Name, (string val) =>
             {
                 Console.WriteLine("Copy\t\t: " + val);
             });
