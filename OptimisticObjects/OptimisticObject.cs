@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Net.Http;
 using Newtonsoft.Json;
 using System.Linq.Expressions;
+using System.Net.Http.Headers;
 
 namespace OptimisticObjects
 {
@@ -82,6 +83,31 @@ namespace OptimisticObjects
         public ChangeRequest<TType> RequestChange(string name)
         {
             return new ChangeRequest<TType>(name);
+        }
+
+        public ChangeRequest<TType> RequestPutChange(string name)
+        {
+            var request = new ChangeRequest<TType>(name);
+            request.Run = () =>
+            {
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                    var requestBody = new StringContent(JsonConvert.SerializeObject(request.Values), Encoding.UTF8, "application/json");
+                    var response = client.PutAsync(ResourceUrl, requestBody);
+                    response.Start();
+                    response.Wait();
+                    var responseBody = response.Result.Content.ReadAsStringAsync();
+                    responseBody.Start();
+                    responseBody.Wait();
+                    var responseObj = JsonConvert.DeserializeObject<TType>(responseBody.Result);
+                    return new OptimisticResponse<TType>()
+                    {
+                        Result = responseObj
+                    };
+                }
+            };
+            return request;
         }
 
         public TType GetPessimisticVersion(Dictionary<string, object> values)
