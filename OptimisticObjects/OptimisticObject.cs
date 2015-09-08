@@ -28,6 +28,16 @@ namespace OptimisticObjects
         private Dictionary<string, string> Actions { get; set; }
         private List<ChangeRequest<TType>> PendingChanges { get; set; }
 
+        public void Bind<T, TTarget>(Expression<Func<TType, T>> property, TTarget target, Expression<Func<TTarget, T>> targetProp)
+        {
+            var propertyInfo = ((MemberExpression)property.Body).Member as PropertyInfo;
+            var targetPropertyInfo = ((MemberExpression)targetProp.Body).Member as PropertyInfo;
+            Bind<T>(propertyInfo.Name, (T input) =>
+            {
+                targetPropertyInfo.SetValue(target, input);
+            });
+        }
+
         public void Bind<T>(Expression<Func<TType, T>> property, Action<T> binding)
         {
             var propertyInfo = ((MemberExpression)property.Body).Member as PropertyInfo;
@@ -67,6 +77,11 @@ namespace OptimisticObjects
             }
 
             return response;
+        }
+
+        public ChangeRequest<TType> RequestChange(string name)
+        {
+            return new ChangeRequest<TType>(name);
         }
 
         public TType GetPessimisticVersion(Dictionary<string, object> values)

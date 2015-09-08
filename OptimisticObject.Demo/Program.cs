@@ -1,4 +1,5 @@
-﻿using System;
+﻿using OptimisticObjects;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -11,39 +12,25 @@ namespace OptimisticObject.Demo
     {
         static void Main(string[] args)
         {
+            var demoTextLabel = new DemoTextLabel();
             var demoObject = OptimisticObjects.ObjectPool<DemoObject>.Get("SomeUrl");
-            demoObject.Bind(b => b.Name, (string val) =>
-            {
-                Console.WriteLine("Original\t: " + val);
-            });
+            demoObject.Bind(b => b.Name, demoTextLabel, t => t.Text);
 
+
+            var demoTextLabelCopy = new DemoTextLabel();
             var demoObjectCopy = OptimisticObjects.ObjectPool<DemoObject>.Get("SomeUrl");
-            demoObjectCopy.Bind(b => b.Name, (string val) =>
-            {
-                Console.WriteLine("Copy\t\t: " + val);
-            });
+            demoObject.Bind(b => b.Name, demoTextLabelCopy, t => t.Text);
 
+            var change1 = demoObject.RequestChange("Update Title");
+            change1.ChangeValue(b => b.Name, "Optimistic Value 1");
+            change1.Run = Run;
+            demoObject.AddChange(change1);
 
-
-            demoObject.AddChange(new OptimisticObjects.ChangeRequest<DemoObject>{
-                Name = "Update Title",
-                Values = new Dictionary<string,object> {
-                    { "Name", "Optimistic Value 1" }
-                },
-                Run = Run
-            });
-
-
-
-            demoObject.AddChange(new OptimisticObjects.ChangeRequest<DemoObject>
-            {
-                Name = "Update Title",
-                Values = new Dictionary<string, object> {
-                    { "Name", "Optimistic Value 2" }
-                },
-                Run = Run
-            });
-
+            var change2 = demoObjectCopy.RequestChange("Update Title");
+            change2.ChangeValue(b => b.Name, "Optimistic Value 2");
+            change2.ChangeValue(b => b.Count, 123);
+            change2.Run = Run;
+            demoObjectCopy.AddChange(change2);
 
 
             demoObject.Run().ContinueWith((t) =>
